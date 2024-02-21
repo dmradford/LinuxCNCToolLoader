@@ -25,6 +25,9 @@ class ToolSelectorApp:
         self.root.title("Tool Selector")
         self.images_cache = {}  # Cache for Tkinter-compatible images to avoid reloading
 
+        # Update library.csv with any Z values from existing tool.tbl
+        self.update_library_with_z_values()
+
         # Load the configuration here
         config_path = Path(__file__).parent / "ToolLoader.config"
         self.config = parse_config(config_path)
@@ -56,15 +59,19 @@ class ToolSelectorApp:
         self.tree.bind('<ButtonRelease-1>', self.on_item_drop)
 
         # Right side container for the export button and image display
-        self.right_side_container = tk.Frame(root)
-        self.right_side_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.right_side_container = tk.Frame(root, width=400)
+        self.right_side_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
 
         # Export button at the top of the right side
-        self.export_button = ttk.Button(self.right_side_container, text="Export Selection", command=self.export_selection)
-        self.export_button.pack(pady=20)
+        self.export_button = tk.Button(self.right_side_container, text="Export Selection", command=self.export_selection)
+        self.export_button.pack(pady=10)
 
-        # Image label below the export button in the right side container
-        self.image_label = tk.Label(self.right_side_container)
+        # Add "Export All" button
+        self.export_all_button = tk.Button(self.right_side_container, text="Export All", command=self.export_all)
+        self.export_all_button.pack(pady=10)  # Adjust padding as needed
+
+        # Now, create and pack the image label inside the frame without padx/pady
+        self.image_label = tk.Label(self.right_side_container, width=400)
         self.image_label.pack(fill=tk.BOTH, expand=True)
 
         self.tree.bind('<<TreeviewSelect>>', self.on_tree_select)
@@ -139,7 +146,7 @@ class ToolSelectorApp:
         # Load and display the image (specific tool image or default)
         if image_path.exists():
             image = Image.open(image_path)
-            image.thumbnail((300, 300))  # Resize image
+            image.thumbnail((280, 280))  # Resize image
             photo = ImageTk.PhotoImage(image)
             self.images_cache[tool_number] = photo  # Cache the image
             return photo
@@ -293,6 +300,22 @@ class ToolSelectorApp:
             # Load and display the image associated with the selected tool number
             self.display_image_for_tool(tool_number)
 
+    def export_all(self):
+        total_pockets = self.config['Total Pockets']
+
+        # Clear existing selection
+        self.tree.selection_remove(self.tree.selection())
+
+        # Select the first N rows, where N is the total pockets
+        for i, item in enumerate(self.tree.get_children(), start=1):
+            if i > total_pockets:
+                break
+            self.tree.selection_add(item)
+
+        # Now, proceed with the export process
+        # This assumes you have a method like export_selection() that handles the actual export
+        self.export_selection()
+
     def export_selection(self):
         # Path for the export file
         export_path = Path(__file__).parent / "tool.tbl"
@@ -321,7 +344,6 @@ class ToolSelectorApp:
         manual_tool_range_start, manual_tool_range_end = self.config['Manual Tool Range']
         
         for tool_number, tool_info in sorted(self.csv_data.items(), key=lambda x: int(x[0])):
-            print(tool_number)
             if manual_tool_range_start <= int(tool_number) <= manual_tool_range_end:
                 # Ensure the tool is not already included
                 if not any(tool[0] == tool_number for tool in export_data):
@@ -354,6 +376,42 @@ class ToolSelectorApp:
         with open(file_name, "w") as file:
             file.write("\n".join(formatted_lines))
         messagebox.showinfo("Success", "Tools exported successfully to tool.tbl.")
+
+    def update_library_with_z_values(self):
+        # Determine the directory where this script is located
+        script_directory = Path(__file__).parent
+
+        # Define the paths to the library.csv and tool.tbl files
+        library_csv_path = script_directory / 'library.csv'
+        tool_tbl_path = script_directory / 'tool.tbl'
+    
+        # Step 1: Read tool.tbl and collect Z values
+        z_values = {}  # Dictionary to hold tool_number: Z value pairs
+        with open(tool_tbl_path, 'r') as tbl_file:
+            for line in tbl_file:
+                parts = line.split()
+                tool_number = parts[0][1:]  # Assuming tool number follows 'T' (e.g., T1 -> 1)
+                z_value = parts[4][1:]  # Assuming Z value follows 'Z' and is the 8th element
+                if z_value == '':
+                        z_value = 0
+                z_values[tool_number] = z_value
+         
+        # Step 2: Read library.csv and prepare updates
+        updated_rows = []
+        with open(library_csv_path, 'r', newline='') as csv_file:
+            reader = csv.DictReader(csv_file)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                tool_number = row["Number (tool_number)"]
+                if tool_number in z_values:
+                    row["Comment (tool_comment)"] = z_values[tool_number]
+                updated_rows.append(row)
+            
+        # Step 3: Write updates to library.csv
+        with open(library_csv_path, 'w', newline='') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(updated_rows)
 
 def main():
     root = tk.Tk()
