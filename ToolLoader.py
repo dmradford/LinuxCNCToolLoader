@@ -70,6 +70,10 @@ class ToolSelectorApp:
         self.export_all_button = tk.Button(self.right_side_container, text="Export All", command=self.export_all)
         self.export_all_button.pack(pady=10)  # Adjust padding as needed
 
+        # Save tool order button
+        self.toolorder_button = tk.Button(self.right_side_container, text="Save Tool Order", command=self.save_current_order)
+        self.toolorder_button.pack(pady=10)
+
         # Now, create and pack the image label inside the frame without padx/pady
         self.image_label = tk.Label(self.right_side_container, width=400)
         self.image_label.pack(fill=tk.BOTH, expand=True)
@@ -163,25 +167,10 @@ class ToolSelectorApp:
             self.image_label.config(image='')  # Clear the image if none is found
             self.image_label.image = None
 
-    def save_current_order(self):
-        with open('ToolLoaderState.csv', 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            for child in self.tree.get_children():
-                tool_number = self.tree.item(child, 'values')[1]  # Adjust index if necessary
-                writer.writerow([tool_number])
-
-    def load_order_from_cache(self):
-        cache_path = Path('ToolLoaderState.csv')
-        if cache_path.exists():
-            with open(cache_path, 'r') as csvfile:
-                reader = csv.reader(csvfile)
-                order = [row[0] for row in reader]  # Assuming each row contains one tool number
-            return order
-        else:
-            return None
-
     def populate_tree(self):
-        cached_order = self.load_order_from_cache()
+        print("test")
+        tool_order = self.load_tool_order()
+        print("tested")
         # Assuming self.config is already populated
         total_pockets = self.config['Total Pockets']
         disabled_pockets = self.config['Disabled Pockets']
@@ -192,8 +181,8 @@ class ToolSelectorApp:
         inserted_tools = 0
 
         # Prepare a list of tool numbers for insertion based on cached order
-        if cached_order:
-                tool_numbers_for_insertion = cached_order
+        if tool_order:
+                tool_numbers_for_insertion = tool_order
 
                 # First pass: insert tools based on the cached or sorted order
                 for tool_number in tool_numbers_for_insertion:
@@ -271,13 +260,25 @@ class ToolSelectorApp:
         self.tree.tag_configure('carousel', background='skyblue')
         self.tree.tag_configure('rack', background='gainsboro')
 
-    def load_order_from_cache(self):
+    def save_current_order(self):
+        with open('ToolLoaderState.csv', 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            for child in self.tree.get_children():
+                tool_number = self.tree.item(child, 'values')[1]  # Adjust index if necessary
+                writer.writerow([tool_number])
+
+    def load_tool_order(self):
         cache_path = Path('ToolLoaderState.csv')
+        order = []
         if cache_path.exists():
             with open(cache_path, 'r') as csvfile:
                 reader = csv.reader(csvfile)
-                return [row[0] for row in reader]
-        return None
+                order = [row[0] for row in reader]
+        print(order)
+        for row in self.csv_data:
+            if str(row) not in order:
+                order.append(row)
+        return order
 
     def insert_tool_into_tree(self, tool_number, tool_info, pocket_number, disabled_pockets):
         # Determine if the current pocket is disabled
@@ -399,18 +400,22 @@ class ToolSelectorApp:
         # Step 2: Read library.csv and prepare updates
         updated_rows = []
         with open(library_csv_path, 'r', newline='') as csv_file:
-            reader = csv.DictReader(csv_file)
-            fieldnames = reader.fieldnames
+            reader = csv.reader(csv_file)
+            headers = next(reader)
+            updated_rows.append(headers)
+
+            condition_column = headers.index("Number (tool_number)")
+            update_column = headers.index("Comment (tool_comment)")
             for row in reader:
-                tool_number = row["Number (tool_number)"]
-                if tool_number in z_values:
-                    row["Comment (tool_comment)"] = z_values[tool_number]
+                if row and len(row) > condition_column:
+                    if row[condition_column] == tool_number:
+                        if len(row) > update_column:
+                            row[update_column] = z_values[tool_number]
                 updated_rows.append(row)
             
         # Step 3: Write updates to library.csv
         with open(library_csv_path, 'w', newline='') as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-            writer.writeheader()
+            writer = csv.writer(csv_file)
             writer.writerows(updated_rows)
 
 def main():
